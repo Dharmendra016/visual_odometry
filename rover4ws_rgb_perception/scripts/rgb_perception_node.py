@@ -46,6 +46,7 @@ from flow import GroundFlow  # noqa: E402
 from ground_geometry import GroundGeometry, quat_to_rot  # noqa: E402
 from models import SegFormer, Yolo  # noqa: E402
 from tracker import Tracker  # noqa: E402
+import views  # noqa: E402
 
 CLASS_IDS = {}
 
@@ -125,6 +126,12 @@ class RgbPerception(Node):
         self.pub_objects = pub(Float32MultiArray, '/rgb/objects', 5)
         self.pub_corr = pub(Float32MultiArray, '/rgb/corridor', 5)
         self.pub_overlay = pub(Image, '/rgb/overlay', 2)
+        # visualisation views (rendered only while someone subscribes) + 3x2 dashboard
+        self.view_names = ['semantic', 'traversability', 'distance', 'obstacles', 'vanishing',
+                           'detections', 'flow']
+        self.pub_views = {n: pub(Image, f'/rgb/view/{n}', 2) for n in self.view_names}
+        self.pub_dashboard = pub(Image, '/rgb/dashboard', 2)
+        self.prev_ts = None
         self.pub_vo = pub(Odometry, '/vo/odom', 10)
         self.pub_vo_status = pub(Float32MultiArray, '/vo/status', 10)
         self.get_logger().info('rgb_perception ready')
@@ -200,7 +207,8 @@ class RgbPerception(Node):
         fs = freespace.scan(labels, self.seg.drivable_lut, self.seg.sky_lut, self.geom,
                             self.max_range, self.min_h, dyn_boxes)
         cor = corr.corridor(fs['col_range'], fs['col_az'])
-        vp, vp_conf = corr.vanishing_point(fs['drivable'], self.horizon_row)
+        vpinfo = corr.vanishing_point(fs['drivable'], self.horizon_row)
+        vp, vp_conf = vpinfo['vp'], vpinfo['conf']
 
         # ---- optical flow: ego-motion + object motion
         box_mask = np.zeros((H, W), bool)
@@ -230,11 +238,16 @@ class RgbPerception(Node):
                 dyn_pts.append(circle_points(G[0][0], G[0][1], d['radius']))
             if pose is not None and d['dynamic']:
                 c, s = math.cos(pose[2]), math.sin(pose[2])
+                d['odom'] = (pose[0] + c * G[0][0] - s * G[0][1], pose[1] + s * G[0][0] + c * G[0][1])
                 track_in.append({'cls': d['cls'], 'radius': d['radius'],
-                                 'x': pose[0] + c * G[0][0] - s * G[0][1],
-                                 'y': pose[1] + s * G[0][0] + c * G[0][1],
+                                 'x': d['odom'][0], 'y': d['odom'][1],
                                  'flow_resid': self.flow.object_residual(d['wbox'], self.geom)})
         tracks = self.tracker.update(track_in, ts) if pose is not None else []
+        for d in dets:                       # label detections with their track (for the views)
+            if 'odom' in d:
+                for tr in tracks:
+                    if tr.cls == d['cls'] and math.hypot(tr.x - d['odom'][0], tr.y - d['odom'][1]) < 0.05:
+                        d['track_id'], d['moving'] = tr.id, self.tracker.is_moving(tr)
 
         # ---- publish
         sp = fs['static_pts']
@@ -260,6 +273,8 @@ class RgbPerception(Node):
             vp[0] * sxf if vp else -1.0, vp[1] * sxf if vp else -1.0, vp_conf]))
         if self.pub_overlay.get_subscription_count() > 0:
             self.publish_overlay(msg, rgb, fs, dets, tracks, cor, vp, vp_conf)
+        self.publish_views(msg.header, rgb, labels, fs, dets, dyn_boxes, cor, vpinfo, vo,
+                           box_mask, ts)
 
         t_end = time.perf_counter()
         self.timing.append((t_seg - t0, t_yolo - t_seg, t_end - t_yolo))
@@ -298,6 +313,40 @@ class RgbPerception(Node):
         tc[14] = tc[21] = tc[28] = 1e6
         o.twist.covariance = tc
         self.pub_vo.publish(o)
+
+    def image_msg(self, header, img):
+        out = Image()
+        out.header = header
+        out.height, out.width = img.shape[:2]
+        out.encoding, out.step = 'rgb8', 3 * img.shape[1]
+        out.data = array.array('B', np.ascontiguousarray(img).tobytes())
+        return out
+
+    def publish_views(self, header, rgb, labels, fs, dets, dyn_boxes, cor, vpinfo, vo, box_mask, ts):
+        want_dash = self.pub_dashboard.get_subscription_count() > 0
+        want = {n for n, p in self.pub_views.items() if p.get_subscription_count() > 0}
+        dash_set = ['traversability', 'distance', 'vanishing', 'semantic', 'detections', 'flow']
+        if want_dash:
+            want |= set(dash_set)
+        dt = ts - self.prev_ts if self.prev_ts is not None else 0.0
+        self.prev_ts = ts
+        if not want:
+            return
+        makers = {
+            'semantic': lambda: views.semantic(rgb, labels, self.seg.labels),
+            'traversability': lambda: views.traversability(rgb, fs, self.geom, dyn_boxes),
+            'distance': lambda: views.distance(rgb, fs, self.geom, labels),
+            'obstacles': lambda: views.obstacles(rgb, fs, self.geom, labels),
+            'vanishing': lambda: views.vanishing(rgb, vpinfo, cor, self.geom, self.horizon_row),
+            'detections': lambda: views.detections(rgb, fs, dets, self.horizon_row),
+            'flow': lambda: views.flow(rgb, self.flow.last, box_mask, vo, dt),
+        }
+        imgs = {n: makers[n]() for n in want}
+        for n, img in imgs.items():
+            if self.pub_views[n].get_subscription_count() > 0:
+                self.pub_views[n].publish(self.image_msg(header, img))
+        if want_dash:
+            self.pub_dashboard.publish(self.image_msg(header, views.dashboard([imgs[n] for n in dash_set])))
 
     def publish_overlay(self, msg, rgb, fs, dets, tracks, cor, vp, vp_conf):
         H, W = rgb.shape[:2]

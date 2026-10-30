@@ -115,8 +115,16 @@ Visualization Manager:
         Depth: 5
       Color: 255; 200; 0
     - Class: rviz_default_plugins/Image
-      Name: RGB perception overlay
+      Name: Perception dashboard
       Enabled: true
+      Topic:
+        Value: /rgb/dashboard
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
+        Depth: 1
+    - Class: rviz_default_plugins/Image
+      Name: RGB perception overlay
+      Enabled: false
       Topic:
         Value: /rgb/overlay
         Reliability Policy: Reliable

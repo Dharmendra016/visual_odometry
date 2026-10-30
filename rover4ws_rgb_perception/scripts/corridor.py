@@ -46,6 +46,7 @@ def corridor(col_range, col_az, fov_deg=50.0, bin_deg=2.0, robot_halfwidth=0.35)
 
 
 def vanishing_point(drivable, horizon_row, min_rows=15):
+    """Returns {vp: (u, v) or None, conf, left/right edge points, fitted lines}."""
     H, W = drivable.shape
     left, right = [], []
     for r in range(max(horizon_row + 3, 0), H):
@@ -57,19 +58,22 @@ def vanishing_point(drivable, horizon_row, min_rows=15):
         if xs[-1] < W - 3:
             right.append((xs[-1], r))
     n_rows = max(1, H - horizon_row)
+    info = {'left': left, 'right': right, 'lines': [], 'vp': None, 'conf': 0.0}
     if len(left) < min_rows or len(right) < min_rows:
-        return None, 0.0
+        return info
     lines = []
     for pts in (left, right):
         vx, vy, x0, y0 = cv2.fitLine(np.array(pts, np.float32), cv2.DIST_HUBER, 0, 0.01, 0.01).ravel()
         lines.append((vx, vy, x0, y0))
+    info['lines'] = lines
     (ax, ay, ax0, ay0), (bx, by, bx0, by0) = lines
     den = ax * by - ay * bx
     if abs(den) < 1e-6:
-        return None, 0.0
+        return info
     t = ((bx0 - ax0) * by - (by0 - ay0) * bx) / den
     u, v = ax0 + t * ax, ay0 + t * ay
     if not (-W <= u <= 2 * W and -H <= v <= H):
-        return None, 0.0
-    conf = min(len(left), len(right)) / n_rows
-    return (float(u), float(v)), float(min(1.0, conf))
+        return info
+    info['vp'] = (float(u), float(v))
+    info['conf'] = float(min(1.0, min(len(left), len(right)) / n_rows))
+    return info

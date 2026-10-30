@@ -98,4 +98,9 @@ def scan(labels, drivable_lut, sky_lut, geom, max_range, min_height, dyn_boxes=(
         'col_range': col_range,
         'col_az': col_az,
         'obs_row': obs_row,
+        # for visualisation (views.py)
+        'candidate': candidate,
+        'run_bottom': bottom,
+        'tall_bottom': tall,
+        'sky': sky,
     }

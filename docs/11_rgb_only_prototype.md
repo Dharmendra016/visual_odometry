@@ -86,6 +86,33 @@ Parameters (`declare_parameter` in the node): `seg_model` (B0 is 2× faster, noi
 Timing (RTX 4060, sim running): **~60 ms/frame** (SegFormer 28, YOLO 13, scan + flow + rest 18)
 → ~16 Hz with the camera at ~24 Hz.
 
+### Visualisation views (`views.py`)
+
+Each view is rendered only while something subscribes to it, so they cost nothing otherwise.
+RViz shows the dashboard by default; open any single view with
+`ros2 run rqt_image_view rqt_image_view` and pick the topic.
+
+| Topic | View |
+|---|---|
+| `/rgb/dashboard` | 3 × 2 mosaic: traversability, distance, vanishing point · semantic, detections, optical flow |
+| `/rgb/view/semantic` | SegFormer classes, coloured, legend of the most frequent classes |
+| `/rgb/view/traversability` | teal free (reachable) · dark green drivable but blocked/far · orange stones < 6 cm · yellow obstacles · magenta people/vehicles · sky |
+| `/rgb/view/distance` | distance heatmap (red near → blue far, 0–10 m) from **flat-ground geometry** — ground by projection, objects by their ground contact; no depth network |
+| `/rgb/view/obstacles` | obstacle instances (connected regions split by class), each with its distance |
+| `/rgb/view/vanishing` | horizon, drivable-area edges (green left / red right), vanishing point, corridor centre-line dots, corridor heading/width |
+| `/rgb/view/detections` | YOLO boxes with track id, class, distance, MOVING flag; horizon; free space |
+| `/rgb/view/flow` | LK flow vectors ×3 (green ground → odometry, red on objects), live VO speed |
+| `/rgb/overlay` | the original single combined overlay |
+
+For the views only, vertical obstacle runs are also split where the segmentation class changes
+(so a rock and the wall behind it get separate distances). The navigation scan deliberately does
+*not* do this: a tall obstacle whose lowest rows carry a different label would be placed too far away.
+
+These mirror the views in the EarthSense TerraMax video (instance segmentation of trunks,
+traversability colouring, depth heatmap, row lines + vanishing point, tracked detections with
+distances). Differences: our heatmap is geometric (flat ground) rather than stereo/learned depth;
+the vanishing point needs visible path edges, so in open fields it reports "no path edges".
+
 ## 11.4 Steering-aware planner (`rover4ws_rgb_navigation/scripts/steering_planner.py`)
 
 Replaces Nav2's bt_navigator + controller_server. Nav2 `planner_server` (Smac Hybrid, global

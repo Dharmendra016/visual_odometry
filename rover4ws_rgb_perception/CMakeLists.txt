@@ -7,7 +7,7 @@ install(PROGRAMS scripts/rgb_perception_node.py
   DESTINATION lib/${PROJECT_NAME})
 # helper modules are imported from the script's own directory
 install(FILES scripts/ground_geometry.py scripts/models.py scripts/freespace.py
-              scripts/corridor.py scripts/flow.py scripts/tracker.py
+              scripts/corridor.py scripts/flow.py scripts/tracker.py scripts/views.py
   DESTINATION lib/${PROJECT_NAME})
 
 # Files edited from Windows (\wsl.localhost) lose the executable bit; restore it on every build.
