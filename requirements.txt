@@ -1,0 +1,18 @@
+# Python packages for rover4ws that ROS / rosdep does not install.
+#   python3 -m pip install --user -r requirements.txt
+#
+# numpy < 2       : ROS 2 Humble's Python packages are built against numpy 1.x
+# setuptools < 80 : colcon (colcon-core) breaks with setuptools >= 80
+numpy<2
+setuptools<80
+
+# Deep learning (the default PyPI wheels for Linux include CUDA)
+torch
+torchvision
+
+# Depth Anything V2 (v0.1) and SegFormer (v0.2) come from Hugging Face transformers
+transformers>=4.45,<4.50
+huggingface_hub<0.30
+
+# YOLO11 (v0.2 RGB-only stack)
+ultralytics

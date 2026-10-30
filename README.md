@@ -1,170 +1,245 @@
-# rover4ws — camera-only navigation prototype (4-wheel steering)
+# rover4ws — camera-only navigation for a 4-wheel-steering rover
 
-> **Detailed documentation:** [docs/](docs/README.md) — architecture, every node and parameter,
-> test methodology and baseline results, design decisions, environment gotchas, real-robot roadmap.
+Click a goal in RViz → the rover builds a map from **one camera**, plans a car-like path and drives
+there around obstacles. No LiDAR, no GPS, no prior map. Runs in Gazebo simulation (ROS 2 Humble).
 
-Click a goal in RViz → the rover builds a map from its single camera, plans a car-like path
-and drives there avoiding obstacles. No LiDAR, no GPS, no prior map.
+There are **two perception/navigation stacks** — pick one at launch time. Both use the same robot
+model, worlds, 4-wheel-steering control, wheel + IMU odometry and safety layers.
 
-Perception follows DRISHTI's ideas (Depth Anything V2 + ground-plane metric scale, unseen ≠ free);
-the system architecture follows monocular-depth-navigation (perception → standard ROS clouds → Nav2).
+| | **A. Depth Anything V2** (v0.1) | **B. RGB-only** (v0.2) |
+|---|---|---|
+| How it sees | neural network predicts depth for every pixel, scaled to metres with the known camera height | SegFormer finds drivable ground, YOLO finds people/vehicles, flat-ground geometry gives distances — **no depth model** |
+| Extras | — | moving-object tracking, corridor & vanishing point, optical-flow odometry, 7 visual views + dashboard |
+| Planning | Nav2 (Smac Hybrid-A* + MPPI) | Nav2 global planner + custom steering-aware arc planner |
+| Launch | `ros2 launch rover4ws_navigation prototype.launch.py` | `ros2 launch rover4ws_rgb_navigation rgb_prototype.launch.py` |
+| Sim results | 6/6 goals, ~24 ms per frame | 4/6 goals in long sessions, ~60 ms per frame |
+| Use it when | you want the most reliable navigation now | you want semantics, people tracking and the TerraMax-style views |
 
-```
-camera ─► depth_node: Depth Anything V2 ─► metric scale from known ground plane ─► 3D points
-                                              │                         │
-                                     /perception/ground        /perception/obstacles (z > 6 cm, holes < -10 cm)
-                                              └──────────┬──────────────┘
-                                                Nav2 costmaps (unknown stays unknown)
-camera + metric depth ─► visual_odometry ─┐              │
-joint_states ─► wheel_odometry (4WS LSQ) ─┼─► EKF ─► odom → base_footprint
-IMU yaw rate ─────────────────────────────┘              │
-RViz "2D Goal Pose" ─► Smac Hybrid-A* (Dubins, R ≥ 0.9 m) ─► MPPI (Ackermann, scores costmap)
-   ─► /cmd_vel_nav ─► collision_monitor (stop 0.40 m ahead ±0.32 m / slow 1.2 m ahead ±0.70 m) ─► /cmd_vel_safe
-   ─► safety_gate (stale perception > 0.5 s or tilt > 20° ⇒ STOP) ─► /cmd_vel ─► four_ws_kinematics
-```
+Full technical documentation: **[docs/](docs/README.md)**.
 
-| Package | Contents |
+**Contents:** [1. Requirements](#1-requirements) · [2. Installation](#2-installation-once) ·
+[3. Every terminal](#3-every-time-you-open-a-terminal) ·
+[4A. Run Depth Anything V2](#4a-run-with-depth-anything-v2) ·
+[**4B. Run RGB-only**](#4b-run-rgb-only-no-depth-model) · [5. Manual driving](#5-drive-manually-either-stack) ·
+[6. Worlds](#6-test-worlds) · [7. Tests](#7-automatic-tests) · [8. Packages](#8-package-overview) ·
+[9. Troubleshooting](#9-troubleshooting) · [10. Limitations](#10-known-limitations)
+
+Installation (section 2) is the **same for both stacks** — do it once, then use 4A, 4B or both.
+
+---
+
+## 1. Requirements
+
+| | |
 |---|---|
-| `rover4ws_description` | URDF/xacro (camera, IMU, GPS, wheel encoders; sim-only perfect depth camera) |
-| `rover4ws_gazebo` | test world, ros2_control, `four_ws_kinematics.py` (cmd_vel → 4 steer angles + 4 wheel speeds) |
-| `rover4ws_localization` | `wheel_odometry.py` (4WS least-squares + slip residual), EKF configs |
-| `rover4ws_perception` | `depth_node.py` (DA-V2, scale fit, clouds), `visual_odometry.py` (LK + PnP-RANSAC) |
-| `rover4ws_navigation` | Nav2 config, behaviour trees (no spin-in-place), `safety_gate.py`, `prototype.launch.py`, `tools/` |
+| OS | **Ubuntu 22.04** (native, or WSL2 on Windows 11) |
+| ROS | **ROS 2 Humble** desktop — [install guide](https://docs.ros.org/en/humble/Installation/Ubuntu-Install-Debs.html) |
+| GPU | NVIDIA GPU strongly recommended (tested: RTX 4060 laptop). Without one both stacks run at only 1–3 frames/s. |
+| Disk | ~6 GB (PyTorch + models) |
 
-## Run it
+> **Windows users:** run every command below in the **Ubuntu terminal** (`wsl -d Ubuntu-22.04`),
+> not in PowerShell. Gazebo and RViz windows open on the Windows desktop automatically (WSLg).
 
-Ubuntu (WSL) terminal, not PowerShell:
+## 2. Installation (once)
+
+**Step 1 — workspace and code**
+```bash
+mkdir -p ~/ros2_ws && cd ~/ros2_ws
+git clone https://github.com/<your-account>/<this-repo>.git src
+```
+
+**Step 2 — ROS dependencies** (Gazebo, Nav2, ros2_control, robot_localization, … — read from every
+`package.xml`)
+```bash
+sudo apt update && sudo apt install -y python3-pip python3-rosdep python3-colcon-common-extensions
+sudo rosdep init 2>/dev/null; rosdep update
+cd ~/ros2_ws && rosdep install --from-paths src --ignore-src -y --rosdistro humble
+```
+
+**Step 3 — Python AI packages** (PyTorch, transformers, YOLO)
+```bash
+python3 -m pip install --user -r ~/ros2_ws/src/requirements.txt
+python3 -c "import torch; print('CUDA available:', torch.cuda.is_available())"   # want: True
+```
+
+**Step 4 — build**
+```bash
+source /opt/ros/humble/setup.bash
+cd ~/ros2_ws && colcon build --symlink-install
+```
+`build/`, `install/` and `log/` are created here on your machine — they are not in the repository.
+
+**Step 5 (optional) — load ROS automatically in every new terminal**
+```bash
+echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc
+echo "source ~/ros2_ws/install/setup.bash" >> ~/.bashrc
+```
+
+The neural-network weights download automatically on first run (internet needed once):
+Depth Anything V2-Small and SegFormer-B2 to `~/.cache/huggingface`, YOLO11n to `~/.cache/rover4ws`.
+
+## 3. Every time you open a terminal
 
 ```bash
 source /opt/ros/humble/setup.bash
-cd ~/ros2_ws && colcon build --symlink-install && source install/setup.bash
-ros2 launch rover4ws_navigation prototype.launch.py
+source ~/ros2_ws/install/setup.bash
+```
+(skip if you did Step 5). After changing code: `cd ~/ros2_ws && colcon build --symlink-install`.
+
+---
+
+## 4A. Run with Depth Anything V2
+
+**Setup needed for this stack:** sections 2 and 3. It uses PyTorch + transformers (from
+`requirements.txt`); the Depth Anything V2-Small model (~100 MB) downloads on the first run.
+Check: `python3 -c "import torch, transformers; print('ok')"`
+
+**Run** (copy-paste into the Ubuntu terminal):
+```bash
+source /opt/ros/humble/setup.bash
+source ~/ros2_ws/install/setup.bash
+ros2 launch rover4ws_navigation prototype.launch.py                      # crate course
+# or
+ros2 launch rover4ws_navigation prototype.launch.py world:=stone_yard    # stones, rocks, moving people
 ```
 
-Wait ~20 s (Gazebo + Depth Anything load; the log prints `depth pipeline … ms/frame` when perception is live).
-In RViz click **2D Goal Pose**, click the target and **drag the arrow in the direction you want the rover
-to face on arrival** — this is a car-like robot, so asking it to arrive facing backwards forces a loop.
+1. Gazebo and RViz open. Wait **~20–30 s** until the terminal shows
+   `depth pipeline … ms/frame` (perception is running) and `Managed nodes are active` (Nav2 is ready).
+2. In RViz click **2D Goal Pose** (top toolbar), click a target on the ground and **drag the arrow in
+   the direction you want the rover to face when it arrives**. This is a car-like robot: asking it to
+   arrive facing backwards makes it drive a loop.
+3. The rover plans (blue line) and drives there.
 
-RViz shows: camera + metric depth images, red obstacle points, green ground points, global/local
-costmaps (grey = unknown), blue planned path, red/yellow stop/slow zones.
+What you see in RViz: camera image and **metric depth image**, red = obstacle points, green = ground
+points, global and local costmaps (grey = unexplored), blue = planned path, red / yellow = stop / slow zones.
 
-| Launch argument | Default | |
+Useful options:
+
+| Option | Default | Meaning |
 |---|---|---|
-| `world` | `test_yard` | `stone_yard` = gravel, large rocks, walking person, moving cart |
-| `depth_source` | `model` | `gt` = sim-only perfect depth camera (to separate planning bugs from perception bugs) |
-| `use_vo` | `true` | fuse visual odometry into the EKF |
-| `gui` / `rviz` | `true` | Gazebo window / RViz |
-| `x`, `y`, `yaw` | `0` | spawn pose (world). The odom frame starts at the spawn pose. |
-| `gt_depth` | auto | add the perfect depth camera (needed for `tools/eval_depth.py`) |
+| `world:=` | `test_yard` | `test_yard` (crates, wall, gap) or `stone_yard` (gravel, rocks, walker, cart) |
+| `depth_source:=gt` | `model` | use the simulator's perfect depth camera instead of the network (debugging) |
+| `use_vo:=false` | `true` | turn off visual odometry |
+| `gui:=false` | `true` | no Gazebo window (faster) |
+| `rviz:=false` | `true` | no RViz |
+| `x:= y:= yaw:=` | `0` | start position |
 
-Manual driving (bypasses Nav2 and both safety layers): `ros2 run teleop_twist_keyboard teleop_twist_keyboard`.
+## 4B. Run RGB-only (no depth model)
 
-### Stone yard — stones, rocks and moving objects
+**Setup needed for this stack:** sections 2 and 3 — nothing extra. It uses PyTorch + transformers
+(SegFormer) + **ultralytics** (YOLO), all in `requirements.txt`. On the first run it downloads
+SegFormer-B2 (~100 MB, to `~/.cache/huggingface`) and YOLO11n (~6 MB, to `~/.cache/rover4ws`).
+Check: `python3 -c "import torch, transformers, ultralytics; print('ok')"`
+If `ultralytics` is missing: `python3 -m pip install --user ultralytics "numpy<2"`
+
+**Run** (copy-paste into the Ubuntu terminal):
+```bash
+source /opt/ros/humble/setup.bash
+source ~/ros2_ws/install/setup.bash
+ros2 launch rover4ws_rgb_navigation rgb_prototype.launch.py                      # stone yard (default)
+# or
+ros2 launch rover4ws_rgb_navigation rgb_prototype.launch.py world:=test_yard     # crate course
+```
+
+**Optional — watch the perception views full-size** (second Ubuntu terminal):
+```bash
+source /opt/ros/humble/setup.bash
+ros2 run rqt_image_view rqt_image_view     # choose e.g. /rgb/dashboard or /rgb/view/distance
+```
+
+**Steps after launching:**
+
+1. Wait **~20–30 s** until the terminal shows `rgb pipeline … ms/frame` and `steering_planner ready`.
+2. In RViz use **2D Goal Pose** exactly as above (drag the arrow in the direction of travel).
+3. The rover plans (blue line), shows its candidate steering arcs (green = free, red = blocked,
+   blue = chosen) and drives there. It slows and stops for people, drives over small stones,
+   goes around rocks, and does a three-point turn when the goal is behind it.
+
+**Perception views** — RViz shows the **dashboard** (6 views); each view is also its own topic
+(open it with `rqt_image_view`, see above):
+
+| Topic | Shows |
+|---|---|
+| `/rgb/dashboard` | all of the below in one 3×2 image |
+| `/rgb/view/traversability` | teal = free, orange = small stones (drivable), yellow = obstacles, magenta = people |
+| `/rgb/view/semantic` | SegFormer classes with legend |
+| `/rgb/view/distance` | distance heatmap (red near → blue far), from flat-ground geometry |
+| `/rgb/view/obstacles` | each obstacle in its own colour with its distance |
+| `/rgb/view/vanishing` | path edges, vanishing point, corridor centre line |
+| `/rgb/view/detections` | YOLO boxes with track id, distance, MOVING flag |
+| `/rgb/view/flow` | optical-flow arrows and live odometry speed |
+
+Options: `world:=`, `use_vo:=`, `gui:=`, `rviz:=`, `x:= y:= yaw:=` (same meaning as above).
+
+## 5. Drive manually (either stack)
 
 ```bash
-ros2 launch rover4ws_navigation prototype.launch.py world:=stone_yard
+ros2 run teleop_twist_keyboard teleop_twist_keyboard
 ```
-Suggested goal: (14, 0) at the far brick wall, then back to the start.
+`i` forward · `,` back · `u`/`o` forward-left/right · `k` stop · `Shift+U`/`Shift+O` diagonal crab.
+Keep that terminal focused. ⚠ Manual driving bypasses the planner **and** the safety layers.
 
-| Object | What should happen |
+## 6. Test worlds
+
+| `world:=` | Contents |
 |---|---|
-| gravel patch (x 1.5–4.5): 40 small stones, 1.5–3.5 cm | rover drives **over** them (below the 6 cm step limit) |
-| 7 large rocks, 35–65 cm | rover plans **around** them |
-| walker — person crossing the path at x = 7.5, 0.6 m/s | rover slows (yellow zone) and stops (red zone), then continues |
-| cart — orange box crossing at x = 11, 0.4 m/s | same |
+| `test_yard` | crate in the way, two crates with a 1.2 m gap, a wall, a standing person; an invisible ice patch at (2–9, 4.5–9.5) for wheel-slip tests |
+| `stone_yard` | 40 pebbles 1.5–3.5 cm (drive over), 7 rocks 35–65 cm (avoid), a person walking across the path, a moving cart. Goal suggestion: (14, 0) then back |
 
-The movers are scripted Gazebo actors: the camera sees them but they have **no collision and never
-dodge** — if the rover has stopped in their lane they walk straight through it. Rearrange the yard by
-editing `rover4ws_gazebo/worlds/make_stone_yard.py` and running it (`python3 make_stone_yard.py`), then rebuild.
+The walker and cart are animations: the camera sees them but they never dodge and have no collision.
+To rearrange the stone yard edit `rover4ws_gazebo/worlds/make_stone_yard.py`, run it, rebuild.
 
-Moving objects leave "ghost" trails in the map (cells are only cleared when the camera looks at them
-again). The navigator therefore forgets its *global* map every 10 s and on any planning failure;
-the local map used for avoidance is kept.
+## 7. Automatic tests
 
-## Test results (simulation, this machine: RTX 4060 laptop, WSL2)
-
-All measured against Gazebo ground truth with the scripts in `rover4ws_navigation/tools/`.
-
-**Depth** — `eval_depth.py`, 40 frames while driving, 0.3–4 m:
-
-| | AbsRel | δ<1.25 |
-|---|---|---|
-| all pixels | 3.1 % | 99.8 % |
-| ground | 2.5 % | |
-| obstacles | 9.1 % | |
-
-Pipeline 23–25 ms/frame (model 15 ms, scale fit 5 ms, clouds 3 ms) → depth at ~16 Hz (camera ~23 Hz).
-
-**Odometry** — `eval_odometry.py`, final position error as % of distance driven:
-
-| | wheels | visual odometry | EKF (wheels+IMU) | EKF (wheels+IMU+VO) |
-|---|---|---|---|---|
-| grass loop, 10.3 m | 1.6 % | 1.5 % | 0.1 % | 0.4 % |
-| ice patch (μ = 0.05), 5.6 m | 5.8 % | 1.4 % | 5.7 % | **3.1 %** |
-
-VO roughly halves the drift when wheels slip; on perfect sim grass it adds a little noise.
-
-**Navigation** — `nav_test.py`, camera-only (Depth Anything + VO), three goals in a row:
-
-| goal (world) | result | time | true final error | closest obstacle |
-|---|---|---|---|---|
-| (12, 0) through the course | succeeded | 59 s | 0.24 m | 0.21 m |
-| (1, 2.5) — U-turn back | succeeded | 32 s | 0.43 m | 0.46 m |
-| (9.5, −2.5) — through the gap | succeeded | 70 s | 0.32 m | 0.22 m |
-
-**Stone yard** — `nav_test.py --world stone_yard`, three crossings in a row (14,0) → (0.5,0) → (14,0):
-
-| | result | time | gravel | closest rock | movers |
-|---|---|---|---|---|---|
-| run 1 | succeeded | 48 s | drove over | ≥ 0.27 m | walker contact while rover **stopped** (0.00 m/s) |
-| run 2 | succeeded | 137 s | drove over | ≥ 0.27 m | walker 0.22 m, cart 1.87 m |
-| run 3 | succeeded | 119 s | drove over | ≥ 0.27 m | cart contact from the side while rover **stopped** |
-
-The rover never drove into a mover; both contacts were the scripted actor walking into a stopped rover.
-`nav_test.py` labels each contact (`COLLISION - rover drove into it` vs `CONTACT - … mover walked into it`).
-Times vary a lot because the rover waits for the movers to pass.
-
-**Safety** — `safety_test.py` (planner bypassed, blind "forward" command):
-sudden box 2.5 m ahead → stopped 0.45 m before it · box removed → resumed · depth node killed → stopped in 0.6 s.
-
-Reproduce (each needs the prototype running headless in another terminal):
+With a stack running headless (`gui:=false rviz:=false`) in one terminal, in another:
 ```bash
 cd ~/ros2_ws/src/rover4ws_navigation/tools
-# ros2 launch rover4ws_navigation prototype.launch.py gui:=false rviz:=false gt_depth:=true
-python3 eval_depth.py --frames 40 --drive
-# ... x:=-8.0 y:=-10.0        (open space)
-python3 eval_odometry.py --pattern loop
-python3 safety_test.py
-# ... x:=1.5 y:=7.0           (ice patch)
-python3 eval_odometry.py --pattern ice
-# ... (default spawn)
-python3 nav_test.py --x 12 --y 0
+python3 nav_test.py --x 12 --y 0                       # go to a goal, report time, error, clearances
+python3 nav_test.py --world stone_yard --x 14 --y 0
+python3 safety_test.py                                 # A: sudden obstacle, perception loss
+python3 safety_test.py --kill rgb_perception_node.py   # same for B
+python3 eval_odometry.py --pattern loop                # start the stack with x:=-8.0 y:=-10.0
+python3 eval_depth.py --frames 40 --drive              # A only, start with gt_depth:=true
 ```
+Methods and baseline numbers: [docs/07](docs/07_testing_and_results.md).
 
-## Known limitations — read before trusting it on the real rover
+## 8. Package overview
 
-- **Gazebo images are not real images.** Depth Anything's 3 % error is on clean renders. Record rosbags
-  of the real camera and re-run the comparison (Marigold offline is a good reference) before driving.
-- **Flat-ground assumption.** Metric scale comes from the camera's known height above a flat ground
-  plane. On slopes/ramps the scale fit degrades; when it fails the node publishes nothing and the safety
-  gate stops the rover (by design).
-- **Clearance is tight** (0.21 m closest). For the real robot raise `inflation_radius` and the stop zone.
-- **Camera FOV ~100°, forward only.** Obstacles beside/behind are remembered in the costmap but not
-  re-checked; the collision monitor only protects the front. Nothing can see a person approaching
-  from the side or behind — the real robot needs at least a rear camera or bumpers.
-- **No motion prediction.** Moving objects are treated as obstacles where they are *now*; the rover
-  stops for them but does not predict where they are going or move out of their way.
-- **No spin-in-place / pure sideways.** With ±35° steering the tightest turn is ~0.64 m radius; planner uses 0.9 m.
-- **No terrain classes yet.** Traversability is geometric (step > 6 cm = obstacle). Semantic classes
-  (grass/mud/water) need real-camera data — segmentation models are meaningless on Gazebo textures.
-- **Odom frame only** — goals are relative to where the rover started. GPS/map frame comes later.
-- **Real hardware:** replace the `<hardware>` plugin in `ros2_control.xacro`; measure and update
-  `properties.xacro`; calibrate the camera. A Wi-Fi IP camera's latency (200–800 ms) will break this —
-  use USB/CSI.
+| Package | Used by | Contents |
+|---|---|---|
+| `rover4ws_description` | A, B | robot model (URDF): deck, 4 steered wheels, camera, IMU, GPS |
+| `rover4ws_gazebo` | A, B | worlds, ros2_control, `four_ws_kinematics.py` (speed + turn → 4 steering angles + 4 wheel speeds) |
+| `rover4ws_localization` | A, B | 4WS wheel odometry, EKF (wheels + IMU + visual odometry) |
+| `rover4ws_navigation` | A (B uses its safety gate + tools) | Nav2 config, behaviour trees, `safety_gate.py`, `prototype.launch.py`, test tools |
+| `rover4ws_perception` | A | `depth_node.py` (Depth Anything V2), `visual_odometry.py` |
+| `rover4ws_rgb_perception` | B | SegFormer, YOLO, free-space scan, corridor, optical flow, tracker, views |
+| `rover4ws_rgb_navigation` | B | steering-aware arc planner, Nav2 global planner config, `rgb_prototype.launch.py` |
 
-## Environment notes
+Git tags: `v0.1-depth-anything`, `v0.2-rgb-only`.
 
-- PyTorch 2.14 (CUDA), transformers 4.49 and `numpy<2` are installed with `pip --user`;
-  `setuptools` is pinned `<80` because colcon needs it.
-- Files edited from Windows lose the Linux executable bit; every `colcon build` restores it.
-- Keep `": "` out of xacro comments — gazebo_ros2_control fails to parse the URDF otherwise.
+## 9. Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| `&&` / `source` errors | you are in PowerShell — open the Ubuntu terminal |
+| `executable '….py' not found on the libexec directory` | the script lost its executable bit (common when editing from Windows): run `colcon build` again (it restores it) or `chmod +x ~/ros2_ws/src/*/scripts/*.py` |
+| Gazebo exits immediately (code 255) | an old Gazebo is still running: `pkill -9 gzserver` |
+| colcon fails after a pip install | `python3 -m pip install --user "setuptools<80"` |
+| numpy / cv_bridge errors | `python3 -m pip install --user "numpy<2"` |
+| `CUDA available: False` | install the NVIDIA driver (WSL: Windows driver only); everything still runs, slowly |
+| RViz is empty / nothing moves | wait for the ready messages (§4A / §4B step 1) before sending a goal |
+| Rover circles near the goal | the goal arrow points backwards — drag it in the direction of travel |
+| A SciPy warning about NumPy at start-up | harmless |
+
+## 10. Known limitations
+
+- Tested in **simulation only**. Gazebo images are far cleaner than real camera images; both stacks
+  must be re-validated on real footage before driving the real rover.
+- **Flat ground assumed** for distances (both stacks) — slopes and kerbs distort them.
+- **Forward camera only** (~100°): nothing protects the sides and rear.
+- Car-like turning only (±35° steering, ~0.64 m minimum radius): no turning on the spot, no pure sideways motion.
+- No GPS yet: goals are relative to where the rover started.
+- Robot dimensions were estimated from photos — measure the real robot and update
+  `rover4ws_description/urdf/properties.xacro` ([docs/02](docs/02_robot_model.md)).
+
+Details and the real-robot plan: [docs/10](docs/10_roadmap_real_robot.md), [docs/11](docs/11_rgb_only_prototype.md).
