@@ -1,0 +1,35 @@
+<!--
+  Navigate to a pose, replanning at 1 Hz as the camera reveals new obstacles.
+  Recoveries: clear costmaps, back up, wait. No Spin - the rover cannot turn in place.
+-->
+<root main_tree_to_execute="MainTree">
+  <BehaviorTree ID="MainTree">
+    <RecoveryNode number_of_retries="6" name="NavigateRecovery">
+      <PipelineSequence name="NavigateWithReplanning">
+        <!-- Forget the global map every 10 s: moving people/carts otherwise leave "ghost"
+             obstacle trails that block routes. Static obstacles are re-seen when in view;
+             the local costmap (used for avoidance) is not cleared here. -->
+        <RateController hz="0.1">
+          <ClearEntireCostmap name="ForgetGlobalCostmap" service_name="global_costmap/clear_entirely_global_costmap"/>
+        </RateController>
+        <RateController hz="1.0">
+          <RecoveryNode number_of_retries="1" name="ComputePathToPose">
+            <ComputePathToPose goal="{goal}" path="{path}" planner_id="GridBased"/>
+            <ClearEntireCostmap name="ClearGlobalOnPlanFail" service_name="global_costmap/clear_entirely_global_costmap"/>
+          </RecoveryNode>
+        </RateController>
+        <RecoveryNode number_of_retries="1" name="FollowPath">
+          <FollowPath path="{path}" controller_id="FollowPath"/>
+          <ClearEntireCostmap name="ClearLocalCostmap-Context" service_name="local_costmap/clear_entirely_local_costmap"/>
+        </RecoveryNode>
+      </PipelineSequence>
+      <ReactiveFallback name="RecoveryFallback">
+        <GoalUpdated/>
+        <RoundRobin name="RecoveryActions">
+          <BackUp backup_dist="0.3" backup_speed="0.1"/>
+          <Wait wait_duration="2"/>
+        </RoundRobin>
+      </ReactiveFallback>
+    </RecoveryNode>
+  </BehaviorTree>
+</root>

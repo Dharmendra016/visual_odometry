@@ -1,0 +1,155 @@
+<?xml version="1.0"?>
+<!--
+  Gazebo Classic sensor plugins.
+  Topics:
+    /camera/image_raw, /camera/camera_info   RGB camera, 640x480 @ 30 Hz
+    /imu/data                                IMU @ 100 Hz (with noise + bias)
+    /gps/fix                                 NavSatFix @ 5 Hz
+    /ground_truth/odom                       true pose - for evaluating VO / EKF only, never for control
+  Wheel encoders come from /joint_states (joint_state_broadcaster).
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- ===== RGB camera ===== -->
+  <gazebo reference="camera_link">
+    <sensor type="camera" name="front_camera">
+      <always_on>true</always_on>
+      <update_rate>30.0</update_rate>
+      <visualize>false</visualize>
+      <camera>
+        <!-- ~100 deg, typical of a wide bullet camera. Replace with your calibrated value. -->
+        <horizontal_fov>1.74</horizontal_fov>
+        <image>
+          <width>640</width>
+          <height>480</height>
+          <format>R8G8B8</format>
+        </image>
+        <clip>
+          <near>0.05</near>
+          <far>100.0</far>
+        </clip>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.007</stddev>
+        </noise>
+      </camera>
+      <plugin name="camera_controller" filename="libgazebo_ros_camera.so">
+        <camera_name>camera</camera_name>
+        <frame_name>camera_optical_frame</frame_name>
+      </plugin>
+    </sensor>
+  </gazebo>
+
+  <!-- ===== Ground-truth depth camera (SIMULATION ONLY - does not exist on the robot) =====
+       Same pose and FOV as the RGB camera; 320x240 at 10 Hz because rendering it is
+       expensive (at 640x480 it slowed the RGB camera from 23 to 6 Hz). Used to (a) test planning with perfect
+       depth and (b) measure the accuracy of the monocular depth network.
+       Topics - /camera_gt/depth/image_raw (32FC1, metres), /camera_gt/depth/camera_info -->
+  <xacro:if value="$(arg gt_depth)">
+    <gazebo reference="camera_link">
+      <sensor type="depth" name="gt_depth_camera">
+        <always_on>true</always_on>
+        <update_rate>10.0</update_rate>
+        <visualize>false</visualize>
+        <camera>
+          <horizontal_fov>1.74</horizontal_fov>
+          <image>
+            <width>320</width>
+            <height>240</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip>
+            <near>0.05</near>
+            <far>30.0</far>
+          </clip>
+        </camera>
+        <plugin name="gt_depth_controller" filename="libgazebo_ros_camera.so">
+          <camera_name>camera_gt</camera_name>
+          <frame_name>camera_optical_frame</frame_name>
+          <min_depth>0.05</min_depth>
+          <max_depth>30.0</max_depth>
+        </plugin>
+      </sensor>
+    </gazebo>
+  </xacro:if>
+
+  <!-- ===== IMU (MPU-6050/BNO055-class noise) ===== -->
+  <xacro:macro name="imu_noise" params="stddev bias_mean bias_stddev">
+    <noise type="gaussian">
+      <mean>0.0</mean>
+      <stddev>${stddev}</stddev>
+      <bias_mean>${bias_mean}</bias_mean>
+      <bias_stddev>${bias_stddev}</bias_stddev>
+    </noise>
+  </xacro:macro>
+
+  <gazebo reference="imu_link">
+    <sensor name="imu_sensor" type="imu">
+      <always_on>true</always_on>
+      <update_rate>100</update_rate>
+      <imu>
+        <angular_velocity>
+          <x><xacro:imu_noise stddev="2e-3" bias_mean="7.5e-6" bias_stddev="8e-7"/></x>
+          <y><xacro:imu_noise stddev="2e-3" bias_mean="7.5e-6" bias_stddev="8e-7"/></y>
+          <z><xacro:imu_noise stddev="2e-3" bias_mean="7.5e-6" bias_stddev="8e-7"/></z>
+        </angular_velocity>
+        <linear_acceleration>
+          <x><xacro:imu_noise stddev="1.7e-2" bias_mean="0.1" bias_stddev="0.001"/></x>
+          <y><xacro:imu_noise stddev="1.7e-2" bias_mean="0.1" bias_stddev="0.001"/></y>
+          <z><xacro:imu_noise stddev="1.7e-2" bias_mean="0.1" bias_stddev="0.001"/></z>
+        </linear_acceleration>
+      </imu>
+      <plugin name="imu_plugin" filename="libgazebo_ros_imu_sensor.so">
+        <ros>
+          <remapping>~/out:=imu/data</remapping>
+        </ros>
+        <frame_name>imu_link</frame_name>
+        <initial_orientation_as_reference>false</initial_orientation_as_reference>
+      </plugin>
+    </sensor>
+  </gazebo>
+
+  <!-- ===== GPS (consumer-grade, ~1.5 m horizontal noise) ===== -->
+  <gazebo reference="gps_link">
+    <sensor name="gps_sensor" type="gps">
+      <always_on>true</always_on>
+      <update_rate>5</update_rate>
+      <gps>
+        <position_sensing>
+          <horizontal>
+            <noise type="gaussian">
+              <mean>0.0</mean>
+              <stddev>1.5</stddev>
+            </noise>
+          </horizontal>
+          <vertical>
+            <noise type="gaussian">
+              <mean>0.0</mean>
+              <stddev>3.0</stddev>
+            </noise>
+          </vertical>
+        </position_sensing>
+      </gps>
+      <plugin name="gps_plugin" filename="libgazebo_ros_gps_sensor.so">
+        <ros>
+          <remapping>~/out:=gps/fix</remapping>
+        </ros>
+        <frame_name>gps_link</frame_name>
+      </plugin>
+    </sensor>
+  </gazebo>
+
+  <!-- ===== Ground truth (evaluation only) ===== -->
+  <gazebo>
+    <plugin name="ground_truth" filename="libgazebo_ros_p3d.so">
+      <ros>
+        <remapping>odom:=ground_truth/odom</remapping>
+      </ros>
+      <body_name>base_footprint</body_name>
+      <frame_name>world</frame_name>
+      <update_rate>50.0</update_rate>
+    </plugin>
+  </gazebo>
+
+</robot>

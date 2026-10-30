@@ -1,0 +1,199 @@
+<?xml version="1.0"?>
+<!--
+  rover4ws - plywood-deck rover on four hoverboard hub wheels, each corner independently steered.
+  Sensors - front RGB camera, IMU, GPS, wheel encoders (joint_states).
+
+  Frames (REP-105 / REP-103, x forward, y left, z up)
+    base_footprint (ground) -> base_link (axle height, centre of wheelbase)
+      -> chassis_link, battery_link, estop_link
+      -> camera_link -> camera_optical_frame
+      -> imu_link, gps_link
+      -> {fl,fr,rl,rr}_steer_link -> {fl,fr,rl,rr}_wheel_link
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="rover4ws">
+
+  <xacro:arg name="use_sim" default="false"/>
+  <xacro:arg name="controllers_file" default=""/>
+  <xacro:arg name="gt_depth" default="false"/>
+
+  <xacro:include filename="$(find rover4ws_description)/urdf/properties.xacro"/>
+  <xacro:include filename="$(find rover4ws_description)/urdf/macros.xacro"/>
+
+  <!-- ===================== Body ===================== -->
+  <link name="base_footprint"/>
+
+  <joint name="base_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="base_link"/>
+    <origin xyz="0 0 ${wheel_radius}" rpy="0 0 0"/>
+  </joint>
+
+  <link name="base_link"/>
+
+  <joint name="chassis_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="chassis_link"/>
+    <origin xyz="0 0 ${deck_z}" rpy="0 0 0"/>
+  </joint>
+
+  <link name="chassis_link">
+    <visual>
+      <geometry><box size="${deck_length} ${deck_width} ${deck_thickness}"/></geometry>
+      <material name="plywood"/>
+    </visual>
+    <!-- electronics clutter on the deck (single block, for looks and collision) -->
+    <visual>
+      <origin xyz="0.02 0 ${deck_thickness/2 + 0.025}" rpy="0 0 0"/>
+      <geometry><box size="0.40 0.32 0.05"/></geometry>
+      <material name="blue"/>
+    </visual>
+    <collision>
+      <geometry><box size="${deck_length} ${deck_width} ${deck_thickness}"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="0.02 0 ${deck_thickness/2 + 0.025}" rpy="0 0 0"/>
+      <geometry><box size="0.40 0.32 0.05"/></geometry>
+    </collision>
+    <xacro:box_inertia m="${deck_mass}" x="${deck_length}" y="${deck_width}" z="${deck_thickness}">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </xacro:box_inertia>
+  </link>
+  <gazebo reference="chassis_link">
+    <material>Gazebo/Wood</material>
+  </gazebo>
+
+  <!-- 12 V SLA battery at the rear -->
+  <joint name="battery_joint" type="fixed">
+    <parent link="chassis_link"/>
+    <child link="battery_link"/>
+    <origin xyz="${-deck_length/2 + 0.06} 0.05 ${deck_thickness/2 + 0.047}" rpy="0 0 ${pi/2}"/>
+  </joint>
+  <link name="battery_link">
+    <visual>
+      <geometry><box size="${battery_size}"/></geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <geometry><box size="${battery_size}"/></geometry>
+    </collision>
+    <xacro:box_inertia m="${battery_mass}" x="0.151" y="0.065" z="0.094">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </xacro:box_inertia>
+  </link>
+
+  <!-- Emergency stop button -->
+  <joint name="estop_joint" type="fixed">
+    <parent link="chassis_link"/>
+    <child link="estop_link"/>
+    <origin xyz="0.0 -0.05 ${deck_thickness/2 + 0.07}" rpy="0 0 0"/>
+  </joint>
+  <link name="estop_link">
+    <visual>
+      <geometry><cylinder radius="0.02" length="0.03"/></geometry>
+      <material name="red"/>
+    </visual>
+    <xacro:cylinder_inertia m="0.05" r="0.02" h="0.03">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </xacro:cylinder_inertia>
+  </link>
+  <gazebo reference="estop_link">
+    <material>Gazebo/Red</material>
+  </gazebo>
+
+  <!-- ===================== Wheels ===================== -->
+  <xacro:steered_wheel prefix="fl" x="${ wheelbase/2}" y="${ track_width/2}" side="1"/>
+  <xacro:steered_wheel prefix="fr" x="${ wheelbase/2}" y="${-track_width/2}" side="-1"/>
+  <xacro:steered_wheel prefix="rl" x="${-wheelbase/2}" y="${ track_width/2}" side="1"/>
+  <xacro:steered_wheel prefix="rr" x="${-wheelbase/2}" y="${-track_width/2}" side="-1"/>
+
+  <!-- ===================== Sensors ===================== -->
+
+  <!-- Front RGB camera (bullet camera on a post, front-left corner) -->
+  <joint name="camera_mount_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="camera_mount_link"/>
+    <origin xyz="${camera_x - 0.04} ${camera_y} ${deck_top_z}" rpy="0 0 0"/>
+  </joint>
+  <link name="camera_mount_link">
+    <visual>
+      <origin xyz="0 0 ${camera_z/2}" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.008" length="${camera_z}"/></geometry>
+      <material name="white"/>
+    </visual>
+    <xacro:cylinder_inertia m="0.05" r="0.008" h="${camera_z}">
+      <origin xyz="0 0 ${camera_z/2}" rpy="0 0 0"/>
+    </xacro:cylinder_inertia>
+  </link>
+
+  <!-- camera_link - x forward, the optical centre of the lens -->
+  <joint name="camera_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="camera_link"/>
+    <origin xyz="${camera_x} ${camera_y} ${deck_top_z + camera_z}" rpy="0 ${camera_pitch} 0"/>
+  </joint>
+  <link name="camera_link">
+    <visual>
+      <origin xyz="-0.05 0 0" rpy="0 ${pi/2} 0"/>
+      <geometry><cylinder radius="0.03" length="0.10"/></geometry>
+      <material name="white"/>
+    </visual>
+    <collision>
+      <origin xyz="-0.05 0 0" rpy="0 ${pi/2} 0"/>
+      <geometry><cylinder radius="0.03" length="0.10"/></geometry>
+    </collision>
+    <xacro:cylinder_inertia m="0.2" r="0.03" h="0.10">
+      <origin xyz="-0.05 0 0" rpy="0 ${pi/2} 0"/>
+    </xacro:cylinder_inertia>
+  </link>
+  <gazebo reference="camera_link">
+    <material>Gazebo/White</material>
+  </gazebo>
+
+  <!-- Optical frame - z forward, x right, y down (REP-103 camera convention) -->
+  <joint name="camera_optical_joint" type="fixed">
+    <parent link="camera_link"/>
+    <child link="camera_optical_frame"/>
+    <origin xyz="0 0 0" rpy="${-pi/2} 0 ${-pi/2}"/>
+  </joint>
+  <link name="camera_optical_frame"/>
+
+  <!-- IMU at the deck centre -->
+  <joint name="imu_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="imu_link"/>
+    <origin xyz="0 0 ${deck_top_z + 0.005}" rpy="0 0 0"/>
+  </joint>
+  <link name="imu_link">
+    <visual>
+      <geometry><box size="0.025 0.020 0.004"/></geometry>
+      <material name="green"/>
+    </visual>
+    <xacro:box_inertia m="0.01" x="0.025" y="0.020" z="0.004">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </xacro:box_inertia>
+  </link>
+
+  <!-- GPS antenna -->
+  <joint name="gps_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="gps_link"/>
+    <origin xyz="-0.12 -0.15 ${deck_top_z + 0.015}" rpy="0 0 0"/>
+  </joint>
+  <link name="gps_link">
+    <visual>
+      <geometry><box size="0.04 0.04 0.012"/></geometry>
+      <material name="black"/>
+    </visual>
+    <xacro:box_inertia m="0.03" x="0.04" y="0.04" z="0.012">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </xacro:box_inertia>
+  </link>
+
+  <!-- ===================== Simulation ===================== -->
+  <xacro:if value="$(arg use_sim)">
+    <xacro:include filename="$(find rover4ws_description)/urdf/ros2_control.xacro"/>
+    <xacro:include filename="$(find rover4ws_description)/urdf/sensors.gazebo.xacro"/>
+    <xacro:rover4ws_ros2_control controllers_file="$(arg controllers_file)"/>
+  </xacro:if>
+
+</robot>

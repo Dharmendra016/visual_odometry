@@ -1,0 +1,46 @@
+<?xml version="1.0"?>
+<!--
+  Geometry and mass estimates for the 4-wheel-steering rover in data/.
+  All values were estimated from photos/video. MEASURE THE REAL ROBOT and
+  update this file - every other file derives from these numbers.
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- Plywood deck -->
+  <xacro:property name="deck_length"    value="0.70"/>
+  <xacro:property name="deck_width"     value="0.48"/>
+  <xacro:property name="deck_thickness" value="0.012"/>
+  <xacro:property name="deck_mass"      value="3.0"/>   <!-- plywood + electronics + wiring -->
+  <!-- Height of deck underside above the ground -->
+  <xacro:property name="deck_clearance" value="0.175"/>
+
+  <!-- 6.5" hoverboard hub-motor wheels -->
+  <xacro:property name="wheel_radius" value="0.0825"/>
+  <xacro:property name="wheel_width"  value="0.055"/>
+  <xacro:property name="wheel_mass"   value="2.5"/>
+
+  <!-- Wheel centre positions relative to base_link (centre of the wheelbase) -->
+  <xacro:property name="wheelbase"   value="0.54"/>  <!-- front-to-rear axle distance -->
+  <xacro:property name="track_width" value="0.50"/>  <!-- left-to-right wheel centre distance -->
+
+  <!-- Steering (one actuator per corner) -->
+  <xacro:property name="max_steer"          value="0.61"/> <!-- rad, ~35 deg -->
+  <xacro:property name="steer_velocity"     value="3.0"/>  <!-- rad/s -->
+  <xacro:property name="steer_effort"       value="20.0"/>
+  <xacro:property name="steer_bracket_mass" value="0.3"/>
+
+  <!-- 12 V SLA battery (rear) -->
+  <xacro:property name="battery_size" value="0.151 0.065 0.094"/>
+  <xacro:property name="battery_mass" value="2.2"/>
+
+  <!-- Camera mount (bullet camera, front-left corner, on a short post) -->
+  <xacro:property name="camera_x"     value="0.27"/>
+  <xacro:property name="camera_y"     value="0.13"/>
+  <xacro:property name="camera_z"     value="0.11"/>  <!-- above deck top -->
+  <xacro:property name="camera_pitch" value="0.20"/>  <!-- rad, positive = looking down -->
+
+  <!-- Derived -->
+  <xacro:property name="deck_z" value="${deck_clearance - wheel_radius + deck_thickness/2}"/>
+  <xacro:property name="deck_top_z" value="${deck_z + deck_thickness/2}"/>
+
+</robot>
