@@ -194,8 +194,9 @@ def main():
             b, v = state['closest'][name]
             if d <= 0.0:
                 # scripted actors never avoid anything; distinguish who moved into whom
-                flag = ('COLLISION - rover drove into it' if v > 0.2 else
-                        'CONTACT - rover was stopped/crawling, the mover walked into it')
+                at_fault = v > 0.2 and abs(b) < 60      # rover moving AND mover in front
+                flag = ('COLLISION - rover drove into it' if at_fault else
+                        'CONTACT - mover reached a stopped rover or came from the side/behind')
             side = 'ahead' if abs(b) < 50 else 'behind' if abs(b) > 130 else 'at the side'
             extra = f'  [mover {side} ({b:+.0f} deg), rover speed {v:.2f} m/s at closest approach]'
         print(f'  {name:12s} {d:6.2f} m {flag}{extra}')

@@ -28,6 +28,11 @@ BOX = """<sdf version="1.6"><model name="sudden_box"><static>true</static><link 
 
 
 def main():
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--kill', default='depth_node.py',
+                    help='perception process to kill in phase 3 (rgb_perception_node.py for the RGB stack)')
+    args = ap.parse_args()
     rclpy.init()
     n = Node('safety_test')
     n.set_parameters([rclpy.parameter.Parameter('use_sim_time', value=True)])
@@ -87,7 +92,15 @@ def main():
           flush=True)
 
     # ---- phase 3
-    subprocess.run(['pkill', '-f', 'depth_node.py'])
+    # not `pkill -f`: this script's own command line contains the pattern (--kill ...)
+    import os
+    import signal
+    me = {os.getpid(), os.getppid()}
+    pids = subprocess.run(['pgrep', '-f', args.kill], capture_output=True, text=True).stdout.split()
+    for pid in pids:
+        cmd = open(f'/proc/{pid}/cmdline').read() if os.path.exists(f'/proc/{pid}/cmdline') else ''
+        if int(pid) not in me and 'safety_test' not in cmd:
+            os.kill(int(pid), signal.SIGKILL)
     t0 = n.get_clock().now()
     stopped_at = None
     while (n.get_clock().now() - t0).nanoseconds < 4e9:

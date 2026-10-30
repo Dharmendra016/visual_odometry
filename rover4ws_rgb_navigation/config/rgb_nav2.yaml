@@ -1,0 +1,136 @@
+# Nav2 pieces used by the RGB-only prototype: global planner (+ global costmap) and the
+# collision monitor. Local planning/control is done by steering_planner.py, not Nav2.
+#
+# Command chain:
+#   steering_planner -> /cmd_vel_nav -> collision_monitor -> /cmd_vel_safe
+#   -> safety_gate (stale /rgb/obstacles or tilt => STOP) -> /cmd_vel -> four_ws_kinematics
+
+planner_server:
+  ros__parameters:
+    use_sim_time: true
+    expected_planner_frequency: 1.0
+    planner_plugins: ["GridBased"]
+    GridBased:
+      plugin: "nav2_smac_planner/SmacPlannerHybrid"
+      downsample_costmap: false
+      downsampling_factor: 1
+      tolerance: 0.5
+      allow_unknown: true
+      max_iterations: 1000000
+      max_on_approach_iterations: 1000
+      max_planning_time: 2.0
+      motion_model_for_search: "DUBIN"
+      angle_quantization_bins: 72
+      analytic_expansion_ratio: 3.5
+      analytic_expansion_max_length: 3.0
+      minimum_turning_radius: 0.9
+      reverse_penalty: 2.0
+      change_penalty: 0.0
+      non_straight_penalty: 1.2
+      cost_penalty: 2.0
+      retrospective_penalty: 0.015
+      lookup_table_size: 20.0
+      cache_obstacle_heuristic: false
+      smooth_path: true
+      smoother:
+        max_iterations: 1000
+        w_smooth: 0.3
+        w_data: 0.2
+        tolerance: 1.0e-10
+        do_refinement: true
+        refinement_num: 2
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      use_sim_time: true
+      global_frame: odom
+      robot_base_frame: base_footprint
+      update_frequency: 2.0
+      publish_frequency: 1.0
+      rolling_window: false
+      width: 50
+      height: 50
+      origin_x: -15.0
+      origin_y: -25.0
+      resolution: 0.1
+      track_unknown_space: true
+      transform_tolerance: 0.3
+      footprint: "[[0.38, 0.29], [0.38, -0.29], [-0.38, -0.29], [-0.38, 0.29]]"
+      plugins: ["obstacle_layer", "inflation_layer"]
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: true
+        footprint_clearing_enabled: true
+        combination_method: 1
+        observation_sources: obstacles free
+        obstacles:              # static obstacle boundary from segmentation (people excluded)
+          topic: /rgb/obstacles
+          data_type: "PointCloud2"
+          sensor_frame: camera_link
+          marking: true
+          clearing: true
+          min_obstacle_height: 0.0
+          max_obstacle_height: 1.5
+          obstacle_max_range: 5.5
+          raytrace_max_range: 6.0
+          raytrace_min_range: 0.0
+          expected_update_rate: 0.0
+          observation_persistence: 0.0
+        free:                   # drivable ground -> clears
+          topic: /rgb/freespace
+          data_type: "PointCloud2"
+          sensor_frame: camera_link
+          marking: false
+          clearing: true
+          min_obstacle_height: -0.5
+          max_obstacle_height: 1.5
+          obstacle_max_range: 5.5
+          raytrace_max_range: 6.0
+          raytrace_min_range: 0.0
+          expected_update_rate: 0.0
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        inflation_radius: 0.75
+        cost_scaling_factor: 3.0
+      always_send_full_costmap: true
+
+collision_monitor:
+  ros__parameters:
+    use_sim_time: true
+    base_frame_id: base_footprint
+    odom_frame_id: odom
+    cmd_vel_in_topic: cmd_vel_nav
+    cmd_vel_out_topic: cmd_vel_safe
+    transform_tolerance: 0.5
+    source_timeout: 0.5
+    base_shift_correction: true
+    stop_pub_timeout: 2.0
+    polygons: ["PolygonStop", "PolygonSlow"]
+    PolygonStop:
+      type: "polygon"
+      # 0.40 m ahead of the bumper, robot width + 2 cm
+      points: [0.76, 0.32, 0.76, -0.32, 0.0, -0.32, 0.0, 0.32]
+      action_type: "stop"
+      max_points: 5
+      visualize: true
+      polygon_pub_topic: "polygon_stop"
+    PolygonSlow:
+      type: "polygon"
+      points: [1.56, 0.70, 1.56, -0.70, 0.0, -0.70, 0.0, 0.70]   # 1.2 m ahead of the bumper
+      action_type: "slowdown"
+      max_points: 5
+      slowdown_ratio: 0.4
+      visualize: true
+      polygon_pub_topic: "polygon_slowdown"
+    observation_sources: ["rgb_obstacles", "rgb_dynamic"]
+    rgb_obstacles:
+      type: "pointcloud"
+      topic: "/rgb/obstacles"
+      min_height: 0.05
+      max_height: 1.5
+    rgb_dynamic:
+      type: "pointcloud"
+      topic: "/rgb/dynamic"
+      min_height: 0.05
+      max_height: 1.5

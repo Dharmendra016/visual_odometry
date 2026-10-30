@@ -81,6 +81,23 @@ Times vary because the robot waits for movers.
 | depth_node killed while driving | stopped after 0.6 s |
 | RViz `/goal_pose` path | drove from (0,0) to within 0.16 m of (6, −3) |
 
+## 7.4 RGB-only prototype (v0.2) results — 2026-10-31
+
+Launch `rover4ws_rgb_navigation rgb_prototype.launch.py`; same tools (`safety_test.py --kill rgb_perception_node.py`).
+
+| Test | Result |
+|---|---|
+| perception pipeline | ~60 ms/frame (SegFormer-B2 28, YOLO11n 13, rest 18) → ~16 Hz |
+| odometry, grass loop 10.3 m | wheels 1.6 %, flow VO 1.1 %, EKF 0.9 % |
+| odometry, ice 5.6 m | wheels 5.8 %, EKF (wheels+IMU+flow VO) 3.3 % |
+| stone_yard, 3 crossings in one session | **2/3** succeeded (71 s, 83 s); 3rd aborted after 22 m. Gravel driven over; closest rock 0.19–0.56 m. One cart contact from behind while the rover drove away (actor does not avoid) |
+| test_yard, 3 goals in one session | **2/3** succeeded (35 s, 42 s); 3rd timed out after 9.9 m. The same goal run on its own succeeded in 33 s → failures appear later in long sessions, not yet diagnosed |
+| safety | stopped 0.35 m before a sudden box · resumed · stopped 0.6 s after perception was killed |
+
+v0.1 (Depth Anything + MPPI) reached 6/6 goals in the same tests; the RGB-only stack is not yet as
+reliable. Open issue: intermittent failures on the 3rd goal of a session (candidates: odometry drift
+accumulated in the local map, remembered false obstacles, K-turn near obstacles).
+
 ## 7.3 Regression checklist (run after changing perception / Nav2 params)
 
 1. `eval_depth.py` — AbsRel all ≤ ~4 %.

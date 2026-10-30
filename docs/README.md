@@ -22,6 +22,7 @@ built this way, what was tried and rejected, and what to do next*.
 | 8 | [Setup & environment](08_setup_and_environment.md) | set up a fresh machine, or fix the WSL environment |
 | 9 | [Decisions & lessons learned](09_decisions_and_lessons.md) | know why things are the way they are, and the bugs already hit |
 | 10 | [Roadmap & real-robot bring-up](10_roadmap_real_robot.md) | plan the next phase (hardware, real camera, terrain classes, GPS) |
+| 11 | [RGB-only prototype](11_rgb_only_prototype.md) | the v0.2 stack: SegFormer + YOLO + corridor + optical flow + steering-aware planner, no depth |
 
 ## Origins
 

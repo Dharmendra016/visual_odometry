@@ -1,0 +1,149 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+  - Class: rviz_common/Tool Properties
+    Name: Tool Properties
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Enabled: true
+      Reference Frame: odom
+      Cell Size: 1.0
+      Plane Cell Count: 40
+    - Class: rviz_default_plugins/Map
+      Name: Global costmap
+      Enabled: true
+      Topic:
+        Value: /global_costmap/costmap
+        Durability Policy: Transient Local
+        Reliability Policy: Reliable
+        Depth: 1
+      Color Scheme: costmap
+      Alpha: 0.5
+    - Class: rviz_default_plugins/Map
+      Name: Local evidence map
+      Enabled: true
+      Topic:
+        Value: /rgb_nav/local_map
+        Durability Policy: Volatile
+        Reliability Policy: Reliable
+        Depth: 1
+      Color Scheme: map
+      Alpha: 0.5
+    - Class: rviz_default_plugins/RobotModel
+      Name: RobotModel
+      Enabled: true
+      Description Source: Topic
+      Description Topic:
+        Value: /robot_description
+        Durability Policy: Transient Local
+        Reliability Policy: Reliable
+        Depth: 5
+    - Class: rviz_default_plugins/PointCloud2
+      Name: Static obstacles
+      Enabled: true
+      Topic:
+        Value: /rgb/obstacles
+        Reliability Policy: Best Effort
+        Durability Policy: Volatile
+        Depth: 5
+      Style: Points
+      Size (Pixels): 4
+      Color Transformer: FlatColor
+      Color: 255; 40; 40
+    - Class: rviz_default_plugins/PointCloud2
+      Name: Free space
+      Enabled: true
+      Topic:
+        Value: /rgb/freespace
+        Reliability Policy: Best Effort
+        Durability Policy: Volatile
+        Depth: 5
+      Style: Points
+      Size (Pixels): 2
+      Color Transformer: FlatColor
+      Color: 60; 200; 60
+    - Class: rviz_default_plugins/PointCloud2
+      Name: People / vehicles
+      Enabled: true
+      Topic:
+        Value: /rgb/dynamic
+        Reliability Policy: Best Effort
+        Durability Policy: Volatile
+        Depth: 5
+      Style: Points
+      Size (Pixels): 5
+      Color Transformer: FlatColor
+      Color: 255; 0; 255
+    - Class: rviz_default_plugins/Path
+      Name: Global plan
+      Enabled: true
+      Topic:
+        Value: /plan
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
+        Depth: 5
+      Color: 25; 120; 255
+      Line Style: Billboards
+      Line Width: 0.03
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Steering arcs
+      Enabled: true
+      Topic:
+        Value: /rgb_nav/arcs
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
+        Depth: 5
+    - Class: rviz_default_plugins/Polygon
+      Name: Stop zone
+      Enabled: true
+      Topic:
+        Value: /polygon_stop
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
+        Depth: 5
+      Color: 255; 0; 0
+    - Class: rviz_default_plugins/Polygon
+      Name: Slow zone
+      Enabled: true
+      Topic:
+        Value: /polygon_slowdown
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
+        Depth: 5
+      Color: 255; 200; 0
+    - Class: rviz_default_plugins/Image
+      Name: RGB perception overlay
+      Enabled: true
+      Topic:
+        Value: /rgb/overlay
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
+        Depth: 1
+  Global Options:
+    Fixed Frame: odom
+    Frame Rate: 30
+    Background Color: 48; 48; 48
+  Tools:
+    - Class: rviz_default_plugins/Interact
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/SetGoal
+      Topic:
+        Value: /goal_pose
+    - Class: rviz_default_plugins/Measure
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Target Frame: base_footprint
+      Distance: 9.0
+      Focal Point:
+        X: 2.0
+        Y: 0.0
+        Z: 0.0
+      Pitch: 0.9
+      Yaw: 3.14
+Window Geometry:
+  Width: 1600
+  Height: 1000

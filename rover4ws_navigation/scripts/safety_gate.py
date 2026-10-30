@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Last software gate before the motors. Passes /cmd_vel_safe -> /cmd_vel unless:
-  - perception is stale (no /perception/obstacles for `perception_timeout`) -> STOP
+  - perception is stale (no message on `perception_topic` for `perception_timeout`) -> STOP
     (Nav2's collision_monitor silently ignores stale sources, so it cannot catch this)
   - the IMU reports roll/pitch beyond `max_tilt` -> STOP
 States are published on /safety/state as GO / STOP_STALE_PERCEPTION / STOP_TILT.
@@ -24,6 +24,7 @@ class SafetyGate(Node):
         super().__init__('safety_gate')
         self.declare_parameter('perception_timeout', 0.5)
         self.declare_parameter('max_tilt', 0.35)  # rad, ~20 deg
+        self.declare_parameter('perception_topic', '/perception/obstacles')
         self.timeout = self.get_parameter('perception_timeout').value
         self.max_tilt = self.get_parameter('max_tilt').value
 
@@ -32,7 +33,8 @@ class SafetyGate(Node):
         self.state = None
 
         qos = QoSProfile(depth=5, reliability=ReliabilityPolicy.BEST_EFFORT)
-        self.create_subscription(PointCloud2, '/perception/obstacles', self.on_perception, qos)
+        self.create_subscription(PointCloud2, self.get_parameter('perception_topic').value,
+                                 self.on_perception, qos)
         self.create_subscription(Imu, '/imu/data', self.on_imu, qos)
         self.create_subscription(Twist, 'cmd_vel_safe', self.on_cmd, 10)
         self.pub = self.create_publisher(Twist, 'cmd_vel', 10)
