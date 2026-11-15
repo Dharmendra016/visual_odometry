@@ -17,7 +17,16 @@ model, worlds, 4-wheel-steering control, wheel + IMU odometry and safety layers.
 
 Full technical documentation: **[docs/](docs/README.md)**.
 
-**Contents:** [1. Requirements](#1-requirements) · [2. Installation](#2-installation-once) ·
+## Demo
+
+Both runs are in Gazebo simulation. Click a preview to open the full video.
+
+| **A. Depth Anything V2: depth-based navigation** | **B. RGB-only: visual odometry and perception views** |
+|---|---|
+| [![Depth Anything V2 stack: the rover maps obstacles from predicted metric depth and drives to a goal](docs/media/depth_anything_v2_navigation.gif)](docs/media/depth_anything_v2_navigation.mp4) | [![RGB-only stack: perception dashboard and optical-flow visual odometry while the rover drives](docs/media/rgb_only_navigation.gif)](docs/media/rgb_only_navigation.mp4) |
+| RViz (left) shows the camera image and the **metric depth** predicted by Depth Anything V2. Obstacle points (red) and ground points (green) build the costmap as the rover drives around crates and walls to the goal. Preview is 5× speed. Full video: [1 min 40 s](docs/media/depth_anything_v2_navigation.mp4). | RViz shows the 3×2 **perception dashboard** (traversability, semantics, distance, obstacles, corridor, optical flow). The rover localizes with **optical-flow visual odometry** fused with wheels and IMU in the EKF. Preview is 3× speed. Full video: [38 s](docs/media/rgb_only_navigation.mp4). |
+
+**Contents:** [Demo](#demo) · [1. Requirements](#1-requirements) · [2. Installation](#2-installation-once) ·
 [3. Every terminal](#3-every-time-you-open-a-terminal) ·
 [4A. Run Depth Anything V2](#4a-run-with-depth-anything-v2) ·
 [**4B. Run RGB-only**](#4b-run-rgb-only-no-depth-model) · [5. Manual driving](#5-drive-manually-either-stack) ·
