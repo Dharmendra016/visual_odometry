@@ -27,7 +27,7 @@ sudo apt install \
 # Python ML stack (user site). numpy<2: ROS Humble's python packages are built against numpy 1.x.
 python3 -m pip install --user "numpy<2" torch torchvision
 python3 -m pip install --user "numpy<2" "transformers>=4.45,<4.50" "huggingface_hub<0.30" ultralytics   # ultralytics = YOLO (v0.2)
-# or simply: python3 -m pip install --user -r ~/ros2_ws/src/requirements.txt
+# or simply: python3 -m pip install --user -r ~/ros2_ws/requirements.txt
 python3 -m pip install --user "setuptools<80"        # colcon-core requires setuptools < 80
 
 # First run downloads depth-anything/Depth-Anything-V2-Small-hf (~100 MB) to ~/.cache/huggingface

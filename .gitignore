@@ -1,3 +1,8 @@
 __pycache__/
 *.pyc
 *Zone.Identifier
+
+# colcon workspace output
+build/
+install/
+log/

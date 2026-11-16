@@ -34,13 +34,17 @@ built this way, what was tried and rejected, and what to do next*.
 ## Package map
 
 ```
-src/
-├── README.md                     quick start
-├── docs/                         ← you are here
-├── rover4ws_description/         URDF/xacro, sensors, ros2_control, RViz model view
-├── rover4ws_gazebo/              worlds, controllers.yaml, sim.launch.py, four_ws_kinematics.py
-├── rover4ws_localization/        wheel_odometry.py, ekf.yaml, ekf_vo.yaml
-├── rover4ws_perception/          depth_node.py, visual_odometry.py
-└── rover4ws_navigation/          nav2_params.yaml, behaviour trees, safety_gate.py,
-                                  prototype.launch.py, rviz, tools/ (evaluation scripts)
+.                                  repository root = ROS 2 workspace
+├── README.md                      quick start
+├── requirements.txt               Python packages rosdep does not install
+├── docs/                          ← you are here (media/ holds the demo videos)
+└── src/
+    ├── rover4ws_description/      URDF/xacro, sensors, ros2_control, RViz model view
+    ├── rover4ws_gazebo/           worlds, controllers.yaml, sim.launch.py, four_ws_kinematics.py
+    ├── rover4ws_localization/     wheel_odometry.py, ekf.yaml, ekf_vo.yaml
+    ├── rover4ws_perception/       depth_node.py, visual_odometry.py                (stack A)
+    ├── rover4ws_navigation/       nav2_params.yaml, behaviour trees, safety_gate.py,
+    │                              prototype.launch.py, rviz, tools/ (evaluation)   (stack A)
+    ├── rover4ws_rgb_perception/   SegFormer, YOLO, corridor, optical flow, tracker (stack B)
+    └── rover4ws_rgb_navigation/   steering-aware arc planner, rgb_prototype.launch.py (stack B)
 ```
